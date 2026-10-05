@@ -30,7 +30,7 @@ def delay_minutes(planned, actual):
 
 
 def load_data():
-    raw = pd.read_csv(ROOT/'data/schedule_airport.csv.gz', na_values=['-'], dtype={'RWY':'string'})
+    raw = pd.read_csv(ROOT/'schedule_airport.csv.gz', na_values=['-'], dtype={'RWY':'string'})
     audit = {'bronrijen':len(raw),'volledig_dubbele_rijen':int(raw.duplicated().sum()),'ontbrekend_per_kolom':raw.isna().sum().to_dict()}
     df = raw.drop_duplicates().copy()
     df['datum'] = pd.to_datetime(df.STD, format='%d/%m/%Y', errors='coerce')
@@ -48,7 +48,7 @@ def load_data():
     df['te_laat'] = df.vertraging.ge(15).where(df.geldig)
     audit.update(middernachtcorrecties=int(df.middernacht.sum()),ambigue_tijden=int(df.tijd_ambigu.sum()),geldige_vertragingen=int(df.geldig.sum()),onbekende_types=sorted(df.loc[df.groep.eq('Onbekend'),'ACT'].unique().tolist()),gemiddelde_met_ambigue=float(df.vertraging.mean()),gemiddelde_zonder_ambigue=float(df.loc[df.geldig,'vertraging'].mean()))
     cols = ['ID','Name','City','Country','IATA','ICAO','Latitude','Longitude','Altitude','Timezone','DST','TZ','Type','Source']
-    airports_raw = pd.read_csv(ROOT/'data/airports-extended.dat',header=None,names=cols,na_values=[r'\N'])
+    airports_raw = pd.read_csv(ROOT/'airports-extended.dat',header=None,names=cols,na_values=[r'\N'])
     # Original OpenFlights file: comma separator + decimal point, unlike lesson clean CSV.
     ap = airports_raw.loc[airports_raw.Type.eq('airport') & airports_raw.ICAO.notna()].copy()
     ap['Latitude'] = pd.to_numeric(ap.Latitude,errors='coerce')
@@ -63,7 +63,7 @@ def load_data():
     audit['icao_match_codes'] = int(df.loc[df.ICAO.notna(),'Org/Des'].nunique())
     audit['bestemmingscodes'] = int(df['Org/Des'].nunique())
     audit['niet_gekoppelde_codes'] = sorted(df.loc[df.ICAO.isna(),'Org/Des'].dropna().unique().tolist())
-    weather = pd.concat([pd.read_csv(ROOT/f'data/weather{y}.csv.gz') for y in [2019,2020]],ignore_index=True)
+    weather = pd.concat([pd.read_csv(ROOT/f'weather{y}.csv.gz') for y in [2019,2020]],ignore_index=True)
     weather['datum'] = pd.to_datetime(weather[['year','month','day']])
     if weather.datum.duplicated().any():
         raise ValueError('Weerbron bevat meerdere rijen per dag.')
@@ -146,4 +146,4 @@ def wind_analysis(df, year=2019, threshold=15, trim=False):
         if len(low) and len(high):
             delta=100*(rng.choice(high,(1500,len(high))).mean(axis=1)-rng.choice(low,(1500,len(low))).mean(axis=1))
             diff.append({'groep':group,'verschil_pp':100*(high.mean()-low.mean()),'laag':np.quantile(delta,.025),'hoog':np.quantile(delta,.975)})
-    return summary,pd.DataFrame(diff),x
+    return summary,pd.DataFrame(diff),x[['datum','kwartaal','groep','te_laat','wspd']]
