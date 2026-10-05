@@ -1,0 +1,94 @@
+{
+  "test_2019": {
+    "dagen": 92,
+    "MAE": 2.340360292912375,
+    "RMSE": 3.0969806855652777,
+    "baseline_MAE": 3.081208178006149,
+    "constant_MAE": 3.9553180678596744,
+    "dekking": 0.8043478260869565
+  },
+  "stresstest_2020": {
+    "dagen": 340,
+    "MAE": 3.7967447564398604,
+    "RMSE": 4.6496651569209195,
+    "baseline_MAE": 3.088911664053848,
+    "constant_MAE": 6.296051775505761,
+    "dekking": 0.5882352941176471
+  },
+  "wind_2019_grens15": [
+    {
+      "groep": "Narrowbody",
+      "windgroep": "Meer wind",
+      "percentage": 33.639921792239264,
+      "laag": 29.772409676834926,
+      "hoog": 37.95690842469616,
+      "dagen": 40,
+      "vluchten": 8615
+    },
+    {
+      "groep": "Narrowbody",
+      "windgroep": "Minder wind",
+      "percentage": 23.9048677127261,
+      "laag": 22.625675803002263,
+      "hoog": 25.27260212081747,
+      "dagen": 325,
+      "vluchten": 73991
+    },
+    {
+      "groep": "Regionaal",
+      "windgroep": "Meer wind",
+      "percentage": 27.997257716068635,
+      "laag": 24.16620920914569,
+      "hoog": 32.28250747226926,
+      "dagen": 40,
+      "vluchten": 2306
+    },
+    {
+      "groep": "Regionaal",
+      "windgroep": "Minder wind",
+      "percentage": 18.82330998986424,
+      "laag": 17.600595494728978,
+      "hoog": 20.09882653616141,
+      "dagen": 325,
+      "vluchten": 20103
+    },
+    {
+      "groep": "Widebody",
+      "windgroep": "Meer wind",
+      "percentage": 21.27255400877682,
+      "laag": 18.363673236897764,
+      "hoog": 24.415129192324308,
+      "dagen": 40,
+      "vluchten": 1710
+    },
+    {
+      "groep": "Widebody",
+      "windgroep": "Minder wind",
+      "percentage": 18.020763068266998,
+      "laag": 17.080378015394494,
+      "hoog": 18.939512877766663,
+      "dagen": 325,
+      "vluchten": 14546
+    }
+  ],
+  "wind_verschillen": [
+    {
+      "groep": "Narrowbody",
+      "verschil_pp": 9.735054079513162,
+      "laag": 5.346534737898706,
+      "hoog": 14.49215945333666
+    },
+    {
+      "groep": "Regionaal",
+      "verschil_pp": 9.173947726204398,
+      "laag": 4.917735902044364,
+      "hoog": 13.676424363013503
+    },
+    {
+      "groep": "Widebody",
+      "verschil_pp": 3.251790940509819,
+      "laag": 0.07193025809945189,
+      "hoog": 6.613926007340962
+    }
+  ]
+}
