@@ -1,6 +1,7 @@
 """Streamlit-dashboard Zürich, gebouwd rond vragen en onderbouwde bevindingen."""
 from pathlib import Path
 import hashlib
+import base64
 import importlib
 import analysis as analysis_module
 # Streamlit reruns app.py but imported modules can remain from an older deployment.
@@ -9,7 +10,6 @@ ANALYSIS_VERSION = hashlib.sha256(Path(analysis_module.__file__).read_bytes()).h
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
 import streamlit as st
 from analysis import load_data, daily_frame, fit_forecast, wind_analysis, GROUPS
 
@@ -47,13 +47,36 @@ def story(text): st.markdown(f'<div class="story">{text}</div>',unsafe_allow_htm
 def header(kicker,title,subtitle):
     st.markdown(f'<div class="eyebrow">{kicker}</div>',unsafe_allow_html=True)
     st.title(title); st.markdown(subtitle)
+def chart_payload(fig):
+    # Plain arrays also work with frontends that do not understand Plotly 6 bdata.
+    def plain(value):
+        if isinstance(value,dict):
+            if 'bdata' in value and 'dtype' in value:
+                arr=np.frombuffer(base64.b64decode(value['bdata']),dtype=np.dtype(value['dtype']))
+                if value.get('shape'):
+                    shape=value['shape']
+                    dims=tuple(int(v.strip()) for v in shape.split(',')) if isinstance(shape,str) else tuple(shape)
+                    arr=arr.reshape(dims)
+                return plain(arr.tolist())
+            return {k:plain(v) for k,v in value.items()}
+        if isinstance(value,np.ndarray): return plain(value.tolist())
+        if isinstance(value,(tuple,list)): return [plain(v) for v in value]
+        if isinstance(value,(float,np.floating)) and not np.isfinite(value): return None
+        if isinstance(value,np.generic): return value.item()
+        return value
+    for trace in fig.data:
+        if trace.name is None: trace.name=''
+        if trace.hovertemplate:
+            trace.hovertemplate=trace.hovertemplate.replace('<extra>%{fullData.name}</extra>','<extra></extra>')
+    return plain(fig.to_plotly_json())
+
 def chart(fig,key=None,height=370):
     if fig.layout.title.text:
         st.markdown(f'#### {fig.layout.title.text}')
     fig.update_layout(title=None,height=height,font=dict(family='Arial',size=13,color=DARK),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',margin=dict(l=15,r=25,t=45,b=30),legend=dict(orientation='h',y=1.02,x=0,yanchor='bottom'),hoverlabel=dict(bgcolor='white'),title_font=dict(size=18))
     fig.update_xaxes(showgrid=False,zeroline=False)
     fig.update_yaxes(gridcolor='#E1E4E2',zerolinecolor='#C5CACB')
-    st.plotly_chart(fig,use_container_width=True,key=key,config={'displaylogo':False})
+    st.plotly_chart(chart_payload(fig),use_container_width=True,key=key,config={'displaylogo':False})
 def num(n): return f'{int(n):,}'.replace(',','.')
 def percent(v): return f'{100*v:.1f}%'.replace('.',',')
 def late_by_year(d):
@@ -95,17 +118,17 @@ if PAGE=='Vertraging & voorspelling':
     cards[0].metric('Vluchten met bruikbare tijden',num(metrics['n']))
     cards[1].metric('Minstens 15 minuten te laat',percent(metrics['late']))
     cards[2].metric('Gemiddelde aankomstvertraging',f'{x.loc[x.LSV.eq("L"),"positief"].mean():.1f} min')
-    h=x.groupby(['uur','beweging']).agg(percentage=('te_laat','mean'),n=('FLT','size')).reset_index()
+    h=x.loc[x.uur.between(6,23)].groupby(['uur','beweging']).agg(percentage=('te_laat','mean'),n=('FLT','size')).reset_index()
     reliable=h.loc[h.n.ge(100)]
     if not reliable.empty:
         peak=reliable.loc[reliable.percentage.idxmax()]
         story(f'In {year} heeft <b>{peak.beweging.lower()} rond {int(peak.uur):02d}:00</b> het hoogste aandeel vertraagde vluchten onder uurvakken met minstens 100 bewegingen: <b>{percent(peak.percentage)}</b>. Dat is een patroon in het rooster, geen bewezen effect van het tijdstip.')
     fig=go.Figure()
     for b,col in [('Landing',TEAL),('Vertrek',ORANGE)]:
-        hh=h.loc[h.beweging.eq(b)].set_index('uur').reindex(range(24))
+        hh=h.loc[h.beweging.eq(b)].set_index('uur').reindex(range(6,24))
         fig.add_trace(go.Scatter(x=hh.index,y=100*hh.percentage,name=b,mode='lines+markers',line=dict(color=col,width=3),customdata=hh.n,hovertemplate='%{x}:00 · %{y:.1f}%<br>n=%{customdata}<extra>%{fullData.name}</extra>',connectgaps=False))
-    fig.update_layout(title=f'{peak.beweging} rond {int(peak.uur):02d}:00 heeft het hoogste vertraagde aandeel · {year}',xaxis_title='Gepland lokaal uur',yaxis_title='Vluchten ≥15 minuten vertraagd (%)')
-    chart(fig);st.caption('Alleen geldige tijden; aankomst en vertrek apart. Geen lijn over ontbrekende uren. Het dagritme is geen gecontroleerde causale vergelijking.')
+    fig.update_layout(title=f'{peak.beweging} rond {int(peak.uur):02d}:00 heeft het hoogste vertraagde aandeel · {year}',xaxis=dict(range=[5.5,23.5],tickvals=list(range(6,24,2)),ticktext=[f'{h:02d}:00' for h in range(6,24,2)]),xaxis_title='Gepland lokaal uur',yaxis_title='Vluchten ≥15 minuten vertraagd (%)')
+    chart(fig);st.caption('Alleen 06:00–23:59; 00:00–05:59 is op verzoek buiten deze grafiek gehouden. De overige analyses gebruiken alle uren. Alleen geldige tijden; aankomst en vertrek apart. Geen lijn over ontbrekende uren. Het dagritme is geen gecontroleerde causale vergelijking.')
     st.divider();st.subheader('Van weer en rooster naar de vertraging van morgen')
     intro=st.columns(3)
     with intro[0]:
@@ -146,11 +169,11 @@ if PAGE=='Vertraging & voorspelling':
     st.caption(f'Train: jan–aug 2019 · foutband: september 2019 · toets: {"okt–dec 2019" if year==2019 else "heel 2020, zonder opnieuw trainen"}. De empirische 90%-band biedt geen gegarandeerde dekking bij veranderende omstandigheden.')
     l,r=st.columns([1,1])
     with l:
-        imp=F['importance'].sort_values('MAE_toename')
+        imp=F['importance'].nlargest(4,'MAE_toename').sort_values('MAE_toename')
         cols=[ORANGE if v==imp.MAE_toename.max() and v>0 else GREY for v in imp.MAE_toename]
         fig=go.Figure(go.Bar(x=imp.MAE_toename,y=imp.kenmerk,orientation='h',marker_color=cols,error_x=dict(type='data',array=imp.spreiding,color=DARK)))
-        fig.update_layout(title='Eerdere vertraging en weer: wat helpt het model?',xaxis_title='Extra MAE na verwisselen (min)',yaxis_title='')
-        chart(fig);st.caption('Permutatiebelang op september, geen causaal effect. Balkjes tonen spreiding over 15 verwisselingen. Correlatie tussen kenmerken kan belang verdelen.')
+        fig.update_layout(title='Deze vier variabelen helpen het model het meest',xaxis_title='Extra MAE na verwisselen (min)',yaxis_title='')
+        chart(fig,height=300);st.caption('Alleen de vier belangrijkste variabelen getoond; het model blijft alle elf gebruiken. Permutatiebelang op september 2019, geen causaal effect. Balkjes tonen spreiding over 15 verwisselingen. Correlatie tussen kenmerken kan belang verdelen.')
     with r:
         st.markdown('#### Op drukke vertragingsdagen kan het model missen')
         worst=t.loc[t.fout.abs().idxmax()]
@@ -160,32 +183,11 @@ if PAGE=='Vertraging & voorspelling':
     st.download_button('Download alle testvoorspellingen',t.to_csv().encode(),'testvoorspellingen.csv','text/csv')
 
 elif PAGE=='Weer & vliegtuigtype':
-    header('02 / eerst het weer, dan de hypothese','Welke omstandigheden hangen samen met vertraging?','Hypothese: op dagen met meer wind neemt vertraging bij kleinere vliegtuigtypes sterker toe dan bij widebody-types.')
+    header('02 / de windhypothese','Hebben kleinere vliegtuigtypes vaker vertraging bij wind?','Hypothese: op dagen met meer wind neemt vertraging bij kleinere vliegtuigtypes sterker toe dan bij widebody-types.')
     st.caption(f'Weer en vliegtuigtypes in {year}. Elke vergelijking gebruikt alleen het gekozen jaar.')
     threshold=st.sidebar.slider('Daggemiddelde wind: grens (km/h)',10,25,15)
     trim=st.sidebar.checkbox('Gevoeligheid: zonder |vertraging| >180 min',False)
-    st.subheader('Welke omstandigheden gaan samen met meer vertraging?')
-    st.write('Lees van links naar rechts: links hangt samen met minder vertraging, rechts met meer. De twee sterkste verbanden krijgen kleur; de overige balken geven context.')
-    weather_daily=daily_frame(D,W).loc[f'{year}-01-01':f'{year}-12-31']
-    columns={'doel':'Vertraging','wspd':'Wind','prcp':'Regen','tavg':'Temperatuur','pres':'Luchtdruk','geplande_bewegingen':'Drukte'}
-    complete=weather_daily.loc[weather_daily.landing_n.ge(10),list(columns)].dropna().rename(columns=columns)
-    target=complete.corr()['Vertraging'].drop('Vertraging').dropna()
-    if len(complete)>=10 and not target.empty:
-        strongest=target.abs().idxmax()
-        trend='meer' if target[strongest]>0 else 'minder'
-        story(f'<b>{strongest}</b> laat in {year} het sterkste verband zien: een hogere waarde gaat samen met <b>{trend} aankomstvertraging</b>. Dit is een patroon op dezelfde dag; het vertelt niet welke factor de vertraging veroorzaakt.')
-        ranked=target.sort_values()
-        highlight=set(target.abs().nlargest(2).index)
-        fig=go.Figure(go.Bar(x=ranked,y=ranked.index,orientation='h',marker_color=[(ORANGE if v>0 else TEAL) if k in highlight else GREY for k,v in ranked.items()],text=[f'{v:+.2f}' for v in ranked],textposition='outside',cliponaxis=False,hovertemplate='%{y}<br>Samenhang met vertraging: %{x:+.2f}<extra></extra>'))
-        fig.update_layout(title=f'Hogere {strongest.lower()} gaat samen met {trend} vertraging · {year}',xaxis=dict(range=[-1,1],tickvals=[-1,-.5,0,.5,1],ticktext=['Sterk minder','Minder','Geen verband','Meer','Sterk meer']),yaxis_title='',showlegend=False)
-        fig.add_vline(x=0,line_color=DARK,line_width=1)
-        chart(fig,height=340)
-        st.caption(f'{len(complete)} complete dagen; {len(weather_daily)-len(complete)} dagen uitgesloten door ontbrekende waarden of minder dan 10 landingen. Balklengte = Pearson-correlatie (−1 tot +1), geen minuten of voorspelde oorzaak. Seizoen en routes kunnen ook een rol spelen.')
-        rainwind=complete[['Wind','Regen']].corr().iloc[0,1]
-        st.caption(f'Wind en regen veranderen ook samen (r = {rainwind:+.2f}). Het voorspelmodel neemt daarom meerdere variabelen mee en gebruikt eerder beschikbare weerwaarden.')
-    else:
-        st.info('Te weinig complete dagen om deze verbanden betrouwbaar te tonen.')
-    st.divider();st.subheader('De windhypothese: reageren kleinere types anders?')
+    st.subheader('De windhypothese: reageren kleinere types anders?')
     summary,diff,x=wind(year,threshold,trim,ANALYSIS_VERSION,D)
     rdelta=diff.set_index('groep').verschil_pp
     outcome=f'Regionale types: <b>{rdelta.get("Regionaal",float("nan")):+.1f} procentpunt</b>; widebody-types: <b>{rdelta.get("Widebody",float("nan")):+.1f} procentpunt</b> verschil bij meer wind. '
@@ -214,34 +216,10 @@ elif PAGE=='Weer & vliegtuigtype':
             st.markdown(f'**Bij meer wind verandert het vertraagde aandeel met {a.verschil_pp:+.1f} procentpunt bij regionale types en {b.verschil_pp:+.1f} bij widebody-types.**')
             st.write('Dit patroon ondersteunt de richting van de hypothese beschrijvend.' if a.verschil_pp>b.verschil_pp else 'Deze vergelijking ondersteunt de voorgestelde richting van de hypothese niet. Ook dat is een onderzoeksresultaat.')
     st.caption('Regionaal = kleinere jets en turboprops; narrowbody = toestellen met één gangpad; widebody = grotere toestellen met twee gangpaden. Onbekende types tellen hier niet mee. Grootte is een benadering, geen gemeten gewicht.')
-    st.subheader('Blijft het windverschil zichtbaar binnen elk kwartaal?')
-    st.write('We vergelijken nu meer en minder wind binnen hetzelfde kwartaal. Kies één vliegtuigklasse: elke balk laat één verschil zien, in plaats van zes lijnen tegelijk.')
-    group=st.sidebar.selectbox('Vliegtuigklasse voor de seizoenscontrole',GROUPS,key='season_group')
-    daily=x.groupby(['datum','kwartaal','groep']).agg(late=('te_laat','mean'),wind=('wspd','first')).reset_index()
-    daily['windgroep']=np.where(daily.wind.ge(threshold),'Meer wind','Minder wind')
-    q=daily.loc[daily.groep.eq(group)].groupby(['kwartaal','windgroep']).agg(p=('late','mean'),dagen=('datum','size')).reset_index()
-    rates=q.pivot(index='kwartaal',columns='windgroep',values='p').reindex(index=range(1,5),columns=['Minder wind','Meer wind'])
-    counts=q.pivot(index='kwartaal',columns='windgroep',values='dagen').reindex(index=range(1,5),columns=['Minder wind','Meer wind']).fillna(0)
-    differences=100*(rates['Meer wind']-rates['Minder wind'])
-    reliable=counts.min(axis=1).ge(10)&differences.notna()
-    shown=differences.where(reliable)
-    labels=['Jan–mrt','Apr–jun','Jul–sep','Okt–dec']
-    fig=go.Figure(go.Bar(x=labels,y=shown,marker_color=[RED if pd.notna(v) and v>=0 else BLUE for v in shown],text=[f'{v:+.1f}' if pd.notna(v) else '' for v in shown],textposition='outside',customdata=counts[['Meer wind','Minder wind']].to_numpy(),hovertemplate='%{x}: %{y:+.1f} procentpunt<br>Meer wind: %{customdata[0]:.0f} dagen<br>Minder wind: %{customdata[1]:.0f} dagen<extra></extra>',showlegend=False))
-    positive=int(shown.gt(0).sum());available=int(shown.notna().sum())
-    title=f'{group}: meer wind gaat in {positive} van {available} vergelijkbare kwartalen samen met meer vertraging' if available else f'{group}: te weinig dagen voor een betrouwbare kwartaalvergelijking'
-    fig.update_layout(title=title,xaxis_title=f'Kwartalen van {year}',yaxis_title='Verschil in vertraagd aandeel (procentpunt)')
-    fig.add_hline(y=0,line_color=DARK,line_width=1.5)
-    for i,v in enumerate(shown):
-        if pd.isna(v):
-            fig.add_annotation(x=labels[i],y=0,text='Te weinig dagen',showarrow=False,yshift=18,font=dict(color='#64717B',size=11))
-    chart(fig,height=380)
-    st.caption('Rood boven nul = bij meer wind vaker vertraging. Blauw onder nul = bij meer wind minder vaak vertraging. Bijvoorbeeld +5 betekent 5 procentpunt meer vertraagde landingen, niet 5 minuten vertraging.')
-    st.caption('Een balk verschijnt alleen als beide windgroepen minstens 10 dagen bevatten. Elke dag weegt even zwaar. Vergelijken binnen een kwartaal beperkt seizoensverschillen, maar corrigeert niet voor route, maatschappij of drukte en bewijst geen windoorzaak.')
-    st.caption(' · '.join(f'{labels[i-1]}: {int(counts.loc[i,"Meer wind"])} dagen met meer wind / {int(counts.loc[i,"Minder wind"])} met minder wind' for i in counts.index))
 
 elif PAGE=='Het coronajaar':
-    header('03 / een ander systeem','Van een druk 2019 naar een stil 2020','Bekijk eerst dezelfde verbindingen in beide jaren, en daarna wanneer het verkeer en de vertraging veranderen.')
-    region=st.sidebar.selectbox('Kaartgebied',['Europa','Wereld'],key='map_region')
+    header('03 / een ander systeem','Van een druk 2019 naar een stil 2020','Bekijk eerst dezelfde verbindingen in beide jaren, en daarna wanneer het verkeer verandert.')
+    region=st.sidebar.selectbox('Kaartgebied',['Europa','Wereld'],format_func=lambda v:'Europa' if v=='Europa' else 'Wereld · alleen intercontinentaal',key='map_region')
     map_years=st.sidebar.multiselect('Jaren op de kaart',[2019,2020],default=[2019,2020],key='map_years')
     movement=st.sidebar.radio('Beweging',['Beide','Landing','Vertrek'],key='corona_movement')
     x=D if movement=='Beide' else D.loc[D.beweging.eq(movement)]
@@ -250,28 +228,30 @@ elif PAGE=='Het coronajaar':
     cards[0].metric('Bewegingen in 2019',num(totals[2019]))
     cards[1].metric('Bewegingen in 2020',num(totals[2020]))
     cards[2].metric('Minder verkeer in 2020',percent(fall))
-    story(f'Het geregistreerde verkeer daalt in 2020 met <b>{percent(fall)}</b>. De kaarten vergelijken <b>dezelfde doelbewust gekozen verbindingen</b>. De tijdgrafieken eronder tonen beide jaren en markeren maart 2020 als pandemiereferentie.')
+    story(f'Het geregistreerde verkeer daalt in 2020 met <b>{percent(fall)}</b>. De kaarten vergelijken <b>dezelfde doelbewust gekozen verbindingen</b>. De tijdgrafiek eronder toont beide jaren en markeert maart 2020 als pandemiereferentie.')
     st.subheader('Waar krimpt het netwerk het sterkst?')
     ap=pd.read_csv(Path(__file__).parent/'airports-extended.dat',header=None,na_values=[r'\N'])
     europe=set(ap.loc[ap[11].fillna('').str.startswith('Europe/'),5].dropna())
-    eligible=x.ICAO.notna() & (x['Org/Des'].isin(europe) if region=='Europa' else True)
+    intercontinental=set(ap.loc[ap[11].fillna('').str.startswith(('Africa/','America/','Asia/','Australia/','Pacific/','Indian/')),5].dropna())
+    selected_area=europe if region=='Europa' else intercontinental
+    eligible=x.ICAO.notna() & x['Org/Des'].isin(selected_area)
     routes=x.loc[eligible].groupby(['Org/Des','jaar']).size().unstack('jaar',fill_value=0).reindex(columns=[2019,2020],fill_value=0)
-    if region=='Europa':
-        top=routes.nlargest(15,2019).copy()
-    else:
-        # Show global reach deliberately: busy routes plus busiest beyond Europe.
-        chosen=list(routes.nlargest(10,2019).index)
-        overseas=routes.loc[~routes.index.isin(europe)].nlargest(5,2019).index
-        chosen=list(dict.fromkeys(chosen+list(overseas)))
-        top=routes.loc[chosen].copy()
+    routes=routes.join(D[['Org/Des','City','Latitude','Longitude']].drop_duplicates().set_index('Org/Des'))
+    if region=='Wereld':
+        # Operational ICA view: long routes to other continents, not nearby leisure routes.
+        lat=np.radians(routes.Latitude);lon=np.radians(routes.Longitude)
+        hub_lat=np.radians(47.46472);hub_lon=np.radians(8.54917)
+        hav=np.sin((lat-hub_lat)/2)**2+np.cos(lat)*np.cos(hub_lat)*np.sin((lon-hub_lon)/2)**2
+        routes['afstand_km']=6371*2*np.arcsin(np.sqrt(hav.clip(0,1)))
+        routes=routes.loc[routes.afstand_km.ge(4000)]
+    top=routes.loc[routes[2019].gt(0)].nlargest(15,2019).copy()
     top['afname']=100*(1-top[2020]/top[2019])
-    top=top.join(D[['Org/Des','City','Latitude','Longitude']].drop_duplicates().set_index('Org/Des'))
     top['code']=[airport_code(i) for i in top.index]
     extreme=top.afname.nlargest(2).index
     winner=top.loc[top.afname.idxmax()]
     st.write(f'**{winner.City} ({airport_code(winner.name)})** krimpt het sterkst binnen deze selectie: **{winner.afname:.1f}%** minder bewegingen. De twee sterkste krimpers zijn in beide kaarten rood; de andere routes geven grijze context.')
     if not map_years:
-        st.info('Kies links minstens één kaartjaar. De tijdgrafieken blijven beide jaren tonen.')
+        st.info('Kies links minstens één kaartjaar. De tijdgrafiek blijft beide jaren tonen.')
     maps=st.columns(len(map_years)) if map_years else []
     size_ref=2*top[[2019,2020]].to_numpy().max()/32**2
     for panel,yy in zip(maps,sorted(map_years)):
@@ -284,9 +264,9 @@ elif PAGE=='Het coronajaar':
             fig.add_trace(go.Scattermap(lon=top.Longitude,lat=top.Latitude,mode='markers+text',text=[row.code if idx in extreme else '' for idx,row in top.iterrows()],textposition='top right',marker=dict(size=top[yy],sizemode='area',sizeref=size_ref,color=[RED if idx in extreme else '#8D9BA4' for idx in top.index]),customdata=top[['code','City',yy,'afname']],hovertemplate='%{customdata[1]} (%{customdata[0]})<br>Bewegingen: %{customdata[2]:,.0f}<br>Krimp 2020: %{customdata[3]:.1f}%<extra></extra>',showlegend=False))
             fig.add_trace(go.Scattermap(lon=[8.54917],lat=[47.46472],mode='markers+text',marker=dict(color=DARK,size=10),text=['ZRH'],textposition='bottom right',showlegend=False))
             fig.update_layout(map=dict(style='carto-positron',center=dict(lat=49,lon=9) if region=='Europa' else dict(lat=25,lon=10),zoom=2.4 if region=='Europa' else .2),showlegend=False,margin=dict(l=0,r=0,t=0,b=0),height=400)
-            st.plotly_chart(fig,use_container_width=True,key=f'map_{yy}',config={'displaylogo':False})
-    selection='de 15 drukste Europese routes van 2019' if region=='Europa' else 'de 10 drukste routes plus de 5 drukste buiten Europa in 2019'
-    st.caption(f'Selectie: {selection}, met betrouwbare locaties. Zo toont de wereldkaart ook het intercontinentale netwerk. Kaartjaren gebruiken dezelfde selectie, zoom en puntoppervlakschaal. Rood = de twee grootste procentuele krimpers; grijs = context. Lijnen zijn schematisch. CARTO/OpenStreetMap.')
+            st.plotly_chart(chart_payload(fig),use_container_width=True,key=f'map_{yy}',config={'displaylogo':False})
+    selection='de 15 drukste Europese routes van 2019' if region=='Europa' else 'de 15 drukste ICA-routes uit 2019 naar andere continenten, op minstens 4.000 km van ZRH'
+    st.caption(f'Selectie: {selection}, met betrouwbare locaties. Europa en Wereld tonen afzonderlijke selecties. ICA betekent hier een bestemming buiten Europa én minstens 4.000 km afstand, zodat nabije routes zoals Cyprus buiten deze selectie vallen. Regio via OpenFlights-tijdzones; onbekende regio’s uitgesloten. Kaartjaren gebruiken dezelfde selectie, zoom en puntoppervlakschaal. Rood = de twee grootste procentuele krimpers; grijs = context. Lijnen zijn schematisch. CARTO/OpenStreetMap.')
     st.divider();st.subheader('Wanneer begint het verschil zichtbaar te worden?')
     # A chronological axis makes the event marker apply to 2020 alone.
     source_dates=pd.date_range('2019-01-01','2020-12-31')
@@ -303,28 +283,6 @@ elif PAGE=='Het coronajaar':
     chart(fig,height=410)
     st.caption('Weektotalen van geregistreerde bewegingen, zonder ontbrekende dagen automatisch als nul in te vullen. De laatste week kan onvolledig zijn. De rode lijn is een historische referentie, niet de eerste besmetting of de datum van alle reisbeperkingen.')
     st.markdown('[Referentie: WHO-aanduiding als pandemie op 11 maart 2020](https://www.who.int/news-room/speeches/item/who-director-general-s-opening-remarks-at-the-media-briefing-on-covid-19---11-march-2020)')
-    valid=x.loc[x.geldig]
-    wd=valid.groupby('datum').agg(late=('te_laat','sum'),n=('FLT','size')).reindex(source_dates)
-    weeks=wd.resample('W-SUN').sum(min_count=1)
-    weeks['p']=100*weeks.late/weeks.n
-    fig=go.Figure()
-    for yy,col in [(2019,GREY),(2020,TEAL)]:
-        part=weeks.loc[weeks.index.year==yy]
-        fig.add_trace(go.Scatter(x=part.index,y=part.p,name=str(yy),mode='lines',line=dict(color=col,width=2.5),connectgaps=False))
-    fig.add_vline(x=event,line_color=RED,line_dash='dash',line_width=2)
-    fig.update_layout(title='Ook het aandeel vertraagde vluchten verandert in 2020',xaxis_title='2019 en 2020 op één tijdlijn',yaxis_title='≥15 minuten vertraagd per week (%)')
-    chart(fig)
-    st.caption('Een kleiner vertraagd aandeel kan samenhangen met minder drukte én een andere mix van overblijvende routes en toestellen. Dit rooster bewijst geen afzonderlijk corona-effect.')
-    rt=x.groupby(['Org/Des','jaar']).size().unstack('jaar',fill_value=0).reindex(columns=[2019,2020],fill_value=0)
-    route=st.sidebar.selectbox('Verbinding voor de jaarvergelijking',list(rt.sort_values(2019,ascending=False).index[:40]),format_func=airport_label)
-    st.subheader(f'Dezelfde verbinding vergelijken: {airport_label(route)}')
-    z=valid.loc[valid['Org/Des'].eq(route)].groupby('jaar').agg(bewegingen=('FLT','size'),vertraagd=('te_laat','mean'))
-    for yy in [2019,2020]:
-        if yy in z.index:
-            row=z.loc[yy];st.write(f'**{yy}:** {num(row.bewegingen)} bewegingen met bruikbare tijden; **{percent(row.vertraagd)}** minstens 15 minuten vertraagd.')
-        else:st.write(f'**{yy}:** geen bewegingen met bruikbare tijden voor deze selectie.')
-
-
 
 st.divider()
 st.markdown('**Van bron naar betrouwbare vergelijking**')
