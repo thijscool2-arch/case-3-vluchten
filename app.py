@@ -59,24 +59,39 @@ def chart_payload(fig):
                     arr=arr.reshape(dims)
                 return plain(arr.tolist())
             return {k:plain(v) for k,v in value.items()}
-        if isinstance(value,np.ndarray): return plain(value.tolist())
+        if isinstance(value,np.ndarray):
+            # datetime64[ns].tolist() returns epoch integers, breaking date axes.
+            if np.issubdtype(value.dtype,np.datetime64):
+                return np.datetime_as_string(value,unit='ms').tolist()
+            return plain(value.tolist())
+        if isinstance(value,np.datetime64): return np.datetime_as_string(value,unit='ms')
         if isinstance(value,(tuple,list)): return [plain(v) for v in value]
         if isinstance(value,(float,np.floating)) and not np.isfinite(value): return None
         if isinstance(value,np.generic): return value.item()
         return value
+    fig.update_layout(template=None)
     for trace in fig.data:
         if trace.name is None: trace.name=''
         if trace.hovertemplate:
             trace.hovertemplate=trace.hovertemplate.replace('<extra>%{fullData.name}</extra>','<extra></extra>')
-    return plain(fig.to_plotly_json())
+    payload=plain(fig.to_plotly_json())
+    # Empty title objects can become an 'undefined' label in the browser.
+    layout=payload['layout']
+    layout['template']={}  # Explicitly empty; omission would restore the default template.
+    layout['title']=dict(layout.get('title') or {},text='')
+    for key,value in layout.items():
+        if key.startswith(('xaxis','yaxis')) and isinstance(value,dict):
+            value['title']=dict(value.get('title') or {})
+            value['title']['text']=value['title'].get('text') or ''
+    return payload
 
 def chart(fig,key=None,height=370):
     if fig.layout.title.text:
         st.markdown(f'#### {fig.layout.title.text}')
-    fig.update_layout(title=None,height=height,font=dict(family='Arial',size=13,color=DARK),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',margin=dict(l=15,r=25,t=45,b=30),legend=dict(orientation='h',y=1.02,x=0,yanchor='bottom'),hoverlabel=dict(bgcolor='white'),title_font=dict(size=18))
+    fig.update_layout(title=dict(text=''),template=None,height=height,font=dict(family='Arial',size=13,color=DARK),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',margin=dict(l=15,r=25,t=45,b=30),legend=dict(orientation='h',y=1.02,x=0,yanchor='bottom'),hoverlabel=dict(bgcolor='white'),title_font=dict(size=18))
     fig.update_xaxes(showgrid=False,zeroline=False)
     fig.update_yaxes(gridcolor='#E1E4E2',zerolinecolor='#C5CACB')
-    st.plotly_chart(chart_payload(fig),use_container_width=True,key=key,config={'displaylogo':False})
+    st.plotly_chart(chart_payload(fig),theme=None,use_container_width=True,key=key,config={'displaylogo':False})
 def num(n): return f'{int(n):,}'.replace(',','.')
 def percent(v): return f'{100*v:.1f}%'.replace('.',',')
 def late_by_year(d):
@@ -264,7 +279,7 @@ elif PAGE=='Het coronajaar':
             fig.add_trace(go.Scattermap(lon=top.Longitude,lat=top.Latitude,mode='markers+text',text=[row.code if idx in extreme else '' for idx,row in top.iterrows()],textposition='top right',marker=dict(size=top[yy],sizemode='area',sizeref=size_ref,color=[RED if idx in extreme else '#8D9BA4' for idx in top.index]),customdata=top[['code','City',yy,'afname']],hovertemplate='%{customdata[1]} (%{customdata[0]})<br>Bewegingen: %{customdata[2]:,.0f}<br>Krimp 2020: %{customdata[3]:.1f}%<extra></extra>',showlegend=False))
             fig.add_trace(go.Scattermap(lon=[8.54917],lat=[47.46472],mode='markers+text',marker=dict(color=DARK,size=10),text=['ZRH'],textposition='bottom right',showlegend=False))
             fig.update_layout(map=dict(style='carto-positron',center=dict(lat=49,lon=9) if region=='Europa' else dict(lat=25,lon=10),zoom=2.4 if region=='Europa' else .2),showlegend=False,margin=dict(l=0,r=0,t=0,b=0),height=400)
-            st.plotly_chart(chart_payload(fig),use_container_width=True,key=f'map_{yy}',config={'displaylogo':False})
+            st.plotly_chart(chart_payload(fig),theme=None,use_container_width=True,key=f'map_{yy}',config={'displaylogo':False})
     selection='de 15 drukste Europese routes van 2019' if region=='Europa' else 'de 15 drukste ICA-routes uit 2019 naar andere continenten, op minstens 4.000 km van ZRH'
     st.caption(f'Selectie: {selection}, met betrouwbare locaties. Europa en Wereld tonen afzonderlijke selecties. ICA betekent hier een bestemming buiten Europa én minstens 4.000 km afstand, zodat nabije routes zoals Cyprus buiten deze selectie vallen. Regio via OpenFlights-tijdzones; onbekende regio’s uitgesloten. Kaartjaren gebruiken dezelfde selectie, zoom en puntoppervlakschaal. Rood = de twee grootste procentuele krimpers; grijs = context. Lijnen zijn schematisch. CARTO/OpenStreetMap.')
     st.divider();st.subheader('Wanneer begint het verschil zichtbaar te worden?')
@@ -277,9 +292,9 @@ elif PAGE=='Het coronajaar':
         part=weekly.loc[weekly.index.year==yy]
         fig.add_trace(go.Scatter(x=part.index,y=part,name=str(yy),mode='lines',line=dict(color=col,width=2.5),connectgaps=False))
     event='2020-03-11'
-    fig.add_vline(x=event,line_color=RED,line_dash='dash',line_width=2)
+    fig.add_shape(type='line',xref='x',yref='paper',x0=event,x1=event,y0=0,y1=1,line=dict(color=RED,dash='dash',width=3),layer='above')
     fig.add_annotation(x=event,y=.98,yref='paper',text='11 maart 2020<br>WHO: pandemie',showarrow=False,xanchor='left',xshift=8,font=dict(color=RED))
-    fig.update_layout(title='Na maart 2020 zakt het geregistreerde verkeer sterk terug',xaxis_title='2019 en 2020 op één tijdlijn',yaxis_title='Bewegingen per week')
+    fig.update_layout(title='Na maart 2020 zakt het geregistreerde verkeer sterk terug',xaxis=dict(type='date',range=['2019-01-01','2020-12-31']),xaxis_title='2019 en 2020 op één tijdlijn',yaxis_title='Bewegingen per week')
     chart(fig,height=410)
     st.caption('Weektotalen van geregistreerde bewegingen, zonder ontbrekende dagen automatisch als nul in te vullen. De laatste week kan onvolledig zijn. De rode lijn is een historische referentie, niet de eerste besmetting of de datum van alle reisbeperkingen.')
     st.markdown('[Referentie: WHO-aanduiding als pandemie op 11 maart 2020](https://www.who.int/news-room/speeches/item/who-director-general-s-opening-remarks-at-the-media-briefing-on-covid-19---11-march-2020)')
