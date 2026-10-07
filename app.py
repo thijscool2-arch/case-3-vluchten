@@ -1,5 +1,11 @@
 """Streamlit-dashboard Zürich, gebouwd rond vragen en onderbouwde bevindingen."""
 from pathlib import Path
+import hashlib
+import importlib
+import analysis as analysis_module
+# Streamlit reruns app.py but imported modules can remain from an older deployment.
+importlib.reload(analysis_module)
+ANALYSIS_VERSION = hashlib.sha256(Path(analysis_module.__file__).read_bytes()).hexdigest()
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -21,12 +27,12 @@ h2 {letter-spacing:-.6px!important;} [data-testid="stMetric"] {background:#fff;b
 </style>''',unsafe_allow_html=True)
 
 @st.cache_data(show_spinner='Brondata inspecteren en koppelen…')
-def data(): return load_data()
+def data(code_version): return load_data()
 @st.cache_data(show_spinner='Voorspelling trainen en toetsen op latere dagen…')
-def forecast(daily):
+def forecast(daily,code_version):
     return fit_forecast(daily)
 @st.cache_data
-def wind(year,threshold,trim,_df):
+def wind(year,threshold,trim,code_version,_df):
     return wind_analysis(_df,year,threshold,trim)
 
 def story(text): st.markdown(f'<div class="story">{text}</div>',unsafe_allow_html=True)
@@ -50,7 +56,7 @@ def monthly_counts(d):
     # Missing cells stay NaN: no automatic zero days/months for absent source rows.
     return x.set_index(['jaar','maand','beweging']).reindex(full).reset_index()
 
-D,W,A=data()
+D,W,A=data(ANALYSIS_VERSION)
 AIRPORTS=D[['Org/Des','IATA','City']].drop_duplicates().set_index('Org/Des')
 def airport_code(code):
     value=AIRPORTS.IATA.get(code)
@@ -94,7 +100,7 @@ if PAGE=='Vertraging & voorspelling':
     st.write('De referentie heet **Laatste dagwaarde**: de voorspelling voor morgen is gelijk aan de werkelijk gemeten gemiddelde vertraging van vandaag. Het uitgebreidere model moet deze eenvoudige aanpak verslaan om extra waarde te hebben.')
     st.caption('Geannuleerde vluchten ontbreken mogelijk in dit historische rooster. Voor dagelijks gebruik is een volledig vooraf gepubliceerd rooster nodig. Ontbrekende invoer wordt uitsluitend met waarden uit de trainingsperiode ingevuld; ontbrekende uitkomsten worden niet ingevuld.')
     st.subheader('De toets: levert het model een kleinere fout op?')
-    F=forecast(daily_frame(D,W)); M=F['metrics']; T=F['test']
+    F=forecast(daily_frame(D,W),ANALYSIS_VERSION); M=F['metrics']; T=F['test']
     gain=100*(M['baseline_MAE']-M['MAE'])/M['baseline_MAE']
     direction='lager' if gain>=0 else 'hoger'
     story(f'De gemiddelde fout is <b>{M["MAE"]:.1f} minuten</b> op {M["dagen"]} ongeziene testdagen. Dat is <b>{abs(gain):.1f}% {direction}</b> dan de referentie <b>Laatste dagwaarde</b>. Het model voorspelt een daggemiddelde; de fout voor een individuele vlucht kan veel groter zijn.')
@@ -156,7 +162,7 @@ elif PAGE=='Weer & vliegtuigtype':
     st.caption(f'Pearson-correlatie op {len(complete)} complete dagen van 2019 met minstens 10 bruikbare landingen. {len(weather_daily)-len(complete)} dagen vallen buiten de matrix door ontbrekende gegevens of onvoldoende landingen; er wordt niets ingevuld. Rood = samen hoger, blauw = tegengesteld, licht = weinig lineair verband. De dubbele helft en zelfcorrelaties zijn weggelaten.')
     st.caption('Vertraging = dagelijks gemiddelde positieve aankomstvertraging. Weer = gemeten dagwaarden; roosterdrukte = geplande bewegingen. Deze matrix beschrijft dezelfde dag. Het voorspelmodel gebruikt alleen eerder beschikbare weerwaarden. Ook seizoen, routes en maatschappijen kunnen verbanden verklaren.')
     st.divider();st.subheader('De windhypothese: reageren kleinere types anders?')
-    summary,diff,x=wind(year,threshold,trim,D)
+    summary,diff,x=wind(year,threshold,trim,ANALYSIS_VERSION,D)
     rdelta=diff.set_index('groep').verschil_pp
     outcome=f'Regionale types: <b>{rdelta.get("Regionaal",float("nan")):+.1f} procentpunt</b>; widebody-types: <b>{rdelta.get("Widebody",float("nan")):+.1f} procentpunt</b> verschil bij meer wind. '
     story(outcome+f'We vergelijken <b>alleen landingen in {year}</b>. Blauw toont dagen met minder wind; rood toont dagen met meer wind. De afstand tussen beide punten toont het verschil per vliegtuigklasse. “Meer wind” betekent hier een <b>daggemiddelde ≥{threshold} km/h</b> — niet de wind tijdens de landing.')
