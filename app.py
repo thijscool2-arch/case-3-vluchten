@@ -85,12 +85,12 @@ def chart_payload(fig):
             value['title']['text']=value['title'].get('text') or ''
     return payload
 
-def chart(fig,key=None,height=370):
+def chart(fig,key=None,height=430):
     if fig.layout.title.text:
         st.markdown(f'#### {fig.layout.title.text}')
-    fig.update_layout(title=dict(text=''),template=None,height=height,font=dict(family='Arial',size=13,color=DARK),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',margin=dict(l=15,r=25,t=45,b=30),legend=dict(orientation='h',y=1.02,x=0,yanchor='bottom'),hoverlabel=dict(bgcolor='white'),title_font=dict(size=18))
-    fig.update_xaxes(showgrid=False,zeroline=False)
-    fig.update_yaxes(gridcolor='#E1E4E2',zerolinecolor='#C5CACB')
+    fig.update_layout(title=dict(text=''),template=None,height=height,font=dict(family='Arial',size=13,color=DARK),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',margin=dict(l=85,r=35,t=95,b=85,autoexpand=True),legend=dict(orientation='h',y=1.12,x=0,yanchor='bottom',xanchor='left',font=dict(size=12),tracegroupgap=8),hoverlabel=dict(bgcolor='white'),title_font=dict(size=18))
+    fig.update_xaxes(showgrid=False,zeroline=False,automargin=True,title_standoff=22,title_font=dict(size=12),tickfont=dict(size=11))
+    fig.update_yaxes(gridcolor='#E1E4E2',zerolinecolor='#C5CACB',automargin=True,title_standoff=22,title_font=dict(size=12),tickfont=dict(size=11))
     st.plotly_chart(chart_payload(fig),theme=None,use_container_width=True,key=key,config={'displaylogo':False})
 def num(n): return f'{int(n):,}'.replace(',','.')
 def percent(v): return f'{100*v:.1f}%'.replace('.',',')
@@ -142,7 +142,7 @@ if PAGE=='Vertraging & voorspelling':
     for b,col in [('Landing',TEAL),('Vertrek',ORANGE)]:
         hh=h.loc[h.beweging.eq(b)].set_index('uur').reindex(range(6,24))
         fig.add_trace(go.Scatter(x=hh.index,y=100*hh.percentage,name=b,mode='lines+markers',line=dict(color=col,width=3),customdata=hh.n,hovertemplate='%{x}:00 · %{y:.1f}%<br>n=%{customdata}<extra>%{fullData.name}</extra>',connectgaps=False))
-    fig.update_layout(title=f'{peak.beweging} rond {int(peak.uur):02d}:00 heeft het hoogste vertraagde aandeel · {year}',xaxis=dict(range=[5.5,23.5],tickvals=list(range(6,24,2)),ticktext=[f'{h:02d}:00' for h in range(6,24,2)]),xaxis_title='Gepland lokaal uur',yaxis_title='Vluchten ≥15 minuten vertraagd (%)')
+    fig.update_layout(title=f'{peak.beweging} rond {int(peak.uur):02d}:00 heeft het hoogste vertraagde aandeel · {year}',xaxis=dict(range=[5.5,23.5],tickvals=list(range(6,24,2)),ticktext=[f'{h:02d}:00' for h in range(6,24,2)]),xaxis_title='Gepland lokaal uur',yaxis_title='Minstens 15 minuten<br>vertraagd (%)')
     chart(fig);st.caption('Alleen 06:00–23:59; 00:00–05:59 is op verzoek buiten deze grafiek gehouden. De overige analyses gebruiken alle uren. Alleen geldige tijden; aankomst en vertrek apart. Geen lijn over ontbrekende uren. Het dagritme is geen gecontroleerde causale vergelijking.')
     st.divider();st.subheader('Van weer en rooster naar de vertraging van morgen')
     intro=st.columns(3)
@@ -179,8 +179,8 @@ if PAGE=='Vertraging & voorspelling':
     fig.add_trace(go.Scatter(x=plot_t.index,y=plot_t.baseline,name='Laatste dagwaarde',line=dict(color=GREY,width=1.5,dash='dot'),connectgaps=False))
     fig.add_trace(go.Scatter(x=plot_t.index,y=plot_t.doel,name='Werkelijk',line=dict(color=DARK,width=1.8),connectgaps=False))
     fig.add_trace(go.Scatter(x=plot_t.index,y=plot_t.voorspeld,name='Voorspeld',line=dict(color=PURPLE,width=2.5),connectgaps=False))
-    fig.update_layout(title=f'De voorspellingsfout is {abs(gain):.0f}% {"kleiner" if gain>=0 else "groter"} dan de referentie',xaxis_title='Voorspelde dag',yaxis_title='Gemiddelde positieve aankomstvertraging (min)')
-    chart(fig,height=420)
+    fig.update_layout(title=f'De voorspellingsfout is {abs(gain):.0f}% {"kleiner" if gain>=0 else "groter"} dan de referentie',xaxis_title='Voorspelde dag',yaxis_title='Gemiddelde aankomstvertraging<br>(positieve minuten)')
+    chart(fig,height=490)
     st.caption(f'Train: jan–aug 2019 · foutband: september 2019 · toets: {"okt–dec 2019" if year==2019 else "heel 2020, zonder opnieuw trainen"}. De empirische 90%-band biedt geen gegarandeerde dekking bij veranderende omstandigheden.')
     l,r=st.columns([1,1])
     with l:
@@ -188,7 +188,7 @@ if PAGE=='Vertraging & voorspelling':
         cols=[ORANGE if v==imp.MAE_toename.max() and v>0 else GREY for v in imp.MAE_toename]
         fig=go.Figure(go.Bar(x=imp.MAE_toename,y=imp.kenmerk,orientation='h',marker_color=cols,error_x=dict(type='data',array=imp.spreiding,color=DARK)))
         fig.update_layout(title='Deze vier variabelen helpen het model het meest',xaxis_title='Extra MAE na verwisselen (min)',yaxis_title='')
-        chart(fig,height=300);st.caption('Alleen de vier belangrijkste variabelen getoond; het model blijft alle elf gebruiken. Permutatiebelang op september 2019, geen causaal effect. Balkjes tonen spreiding over 15 verwisselingen. Correlatie tussen kenmerken kan belang verdelen.')
+        chart(fig,height=370);st.caption('Alleen de vier belangrijkste variabelen getoond; het model blijft alle elf gebruiken. Permutatiebelang op september 2019, geen causaal effect. Balkjes tonen spreiding over 15 verwisselingen. Correlatie tussen kenmerken kan belang verdelen.')
     with r:
         st.markdown('#### Op drukke vertragingsdagen kan het model missen')
         worst=t.loc[t.fout.abs().idxmax()]
@@ -217,7 +217,7 @@ elif PAGE=='Weer & vliegtuigtype':
         b=summary.loc[summary.windgroep.eq(wg)].set_index('groep').reindex(GROUPS)
         fig.add_trace(go.Scatter(y=b.index,x=b.percentage,mode='markers',name=wg,marker=dict(size=13,color=col),error_x=dict(type='data',array=b.hoog-b.percentage,arrayminus=b.percentage-b.laag,color=col),customdata=b[['dagen','vluchten']],hovertemplate='%{y}: %{x:.1f}%<br>%{customdata[0]} dagen · %{customdata[1]} landingen<extra>%{fullData.name}</extra>'))
     wind_direction='sterker' if rdelta.get('Regionaal',0)>rdelta.get('Widebody',0) else 'niet sterker'
-    fig.update_layout(title=f'Het windverschil is bij regionale types {wind_direction} dan bij widebody · {year}',xaxis_title='Gemiddeld dagelijks aandeel ≥15 minuten vertraagd (%)',yaxis_title='')
+    fig.update_layout(title=f'Het windverschil is bij regionale types {wind_direction} dan bij widebody · {year}',xaxis_title='Dagelijks aandeel landingen<br>minstens 15 minuten vertraagd (%)',yaxis_title='')
     chart(fig)
     st.caption('Blauw = minder wind; rood = meer wind. De verbinding maakt het verschil binnen één klasse zichtbaar. Elke dag weegt even zwaar. De strepen tonen de onzekerheidsmarge uit 1.500 hersteekproeven van hele dagen; overlap of kleine aantallen maken conclusies minder stevig.')
     for wg in ['Minder wind','Meer wind']:
@@ -293,9 +293,9 @@ elif PAGE=='Het coronajaar':
         fig.add_trace(go.Scatter(x=part.index,y=part,name=str(yy),mode='lines',line=dict(color=col,width=2.5),connectgaps=False))
     event='2020-03-11'
     fig.add_shape(type='line',xref='x',yref='paper',x0=event,x1=event,y0=0,y1=1,line=dict(color=RED,dash='dash',width=3),layer='above')
-    fig.add_annotation(x=event,y=.98,yref='paper',text='11 maart 2020<br>WHO: pandemie',showarrow=False,xanchor='left',xshift=8,font=dict(color=RED))
     fig.update_layout(title='Na maart 2020 zakt het geregistreerde verkeer sterk terug',xaxis=dict(type='date',range=['2019-01-01','2020-12-31']),xaxis_title='2019 en 2020 op één tijdlijn',yaxis_title='Bewegingen per week')
-    chart(fig,height=410)
+    chart(fig,height=460)
+    st.markdown(f'<p style="color:{RED};font-size:14px;margin-top:0;">Rode stippellijn · 11 maart 2020 · WHO duidt COVID-19 aan als pandemie</p>',unsafe_allow_html=True)
     st.caption('Weektotalen van geregistreerde bewegingen, zonder ontbrekende dagen automatisch als nul in te vullen. De laatste week kan onvolledig zijn. De rode lijn is een historische referentie, niet de eerste besmetting of de datum van alle reisbeperkingen.')
     st.markdown('[Referentie: WHO-aanduiding als pandemie op 11 maart 2020](https://www.who.int/news-room/speeches/item/who-director-general-s-opening-remarks-at-the-media-briefing-on-covid-19---11-march-2020)')
 
