@@ -58,7 +58,7 @@ def load_data():
     # Ambiguous duplicate ICAOs are never silently matched.
     ap = ap.loc[~ap.ICAO.duplicated(keep=False)]
     audit['luchthaven_types'] = airports_raw.Type.value_counts().to_dict()
-    df = df.merge(ap[['ICAO','Name','City','Country','Latitude','Longitude']],left_on='Org/Des',right_on='ICAO',how='left',validate='many_to_one')
+    df = df.merge(ap[['ICAO','IATA','Name','City','Country','Latitude','Longitude']],left_on='Org/Des',right_on='ICAO',how='left',validate='many_to_one')
     audit['icao_match_vluchten'] = int(df.ICAO.notna().sum())
     audit['icao_match_codes'] = int(df.loc[df.ICAO.notna(),'Org/Des'].nunique())
     audit['bestemmingscodes'] = int(df['Org/Des'].nunique())
