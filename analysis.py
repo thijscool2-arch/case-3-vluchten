@@ -13,8 +13,8 @@ GROUPS = ['Regionaal', 'Narrowbody', 'Widebody']
 WIDE = set('A310 A332 A333 A339 A343 A359 A35K A388 B744 B763 B764 B772 B77L B77W B788 B789 B78X'.split())
 NARROW = set('BCS1 BCS3 A318 A319 A320 A321 A20N A21N B733 B734 B735 B736 B737 B738 B739 B38M B752 B753 MD82'.split())
 REGIONAL = set('AT45 AT72 AT75 AT76 B190 B462 BE20 CRJ2 CRJ7 CRJ9 CRJX C750 D328 DH8D E135 E145 E170 E190 E195 E290 E75L E75S F100 RJ1H RJ85 SB20 SF34 SW4 AN26'.split())
-FEATURES = ['vorige_vertraging', 'gemiddelde_7d', 'vorige_wind', 'vorige_neerslag', 'vorige_temperatuur', 'geplande_bewegingen', 'geplande_landingen', 'widebody_aandeel', 'weekdag', 'maand']
-FEATURE_LABELS = {'vorige_vertraging':'Vertraging gisteren','gemiddelde_7d':'Vertraging afgelopen 7 dagen','vorige_wind':'Wind gisteren','vorige_neerslag':'Neerslag gisteren','vorige_temperatuur':'Temperatuur gisteren','geplande_bewegingen':'Roosterdrukte morgen','geplande_landingen':'Landingen morgen','widebody_aandeel':'Aandeel widebody morgen','weekdag':'Dag van de week','maand':'Maand'}
+FEATURES = ['vorige_vertraging', 'gemiddelde_7d', 'vorige_wind', 'vorige_neerslag', 'vorige_temperatuur', 'vorige_luchtdruk', 'geplande_bewegingen', 'geplande_landingen', 'widebody_aandeel', 'weekdag', 'maand']
+FEATURE_LABELS = {'vorige_vertraging':'Vertraging gisteren','gemiddelde_7d':'Vertraging afgelopen 7 dagen','vorige_wind':'Wind gisteren','vorige_neerslag':'Neerslag gisteren','vorige_temperatuur':'Temperatuur gisteren','vorige_luchtdruk':'Luchtdruk gisteren','geplande_bewegingen':'Roosterdrukte morgen','geplande_landingen':'Landingen morgen','widebody_aandeel':'Aandeel widebody morgen','weekdag':'Dag van de week','maand':'Maand'}
 
 
 def delay_minutes(planned, actual):
@@ -85,10 +85,10 @@ def daily_frame(df, weather):
     daily = df.groupby('datum').agg(geplande_bewegingen=('FLT','size'),geplande_landingen=('LSV',lambda x:x.eq('L').sum()),widebody_aandeel=('groep',lambda x:x.eq('Widebody').mean())).reindex(dates)
     # A day absent from source is missing, not automatically zero traffic.
     land = df.loc[df.LSV.eq('L') & df.geldig].groupby('datum').agg(doel=('positief','mean'),landing_n=('FLT','size'))
-    daily = daily.join(land).join(weather.set_index('datum')[['wspd','prcp','tavg']])
+    daily = daily.join(land).join(weather.set_index('datum')[['wspd','prcp','tavg','pres']])
     daily['vorige_vertraging'] = daily.doel.shift(1)
     daily['gemiddelde_7d'] = daily.doel.shift(1).rolling(7,min_periods=3).mean()
-    for orig,new in [('wspd','vorige_wind'),('prcp','vorige_neerslag'),('tavg','vorige_temperatuur')]: daily[new] = daily[orig].shift(1)
+    for orig,new in [('wspd','vorige_wind'),('prcp','vorige_neerslag'),('tavg','vorige_temperatuur'),('pres','vorige_luchtdruk')]: daily[new] = daily[orig].shift(1)
     daily['weekdag'] = daily.index.dayofweek
     daily['maand'] = daily.index.month
     daily.index.name = 'datum'
